@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"github.com/sirupsen/logrus"
 	"math/rand"
 	"time"
 )
@@ -21,7 +20,6 @@ type Crossword struct {
 }
 
 func New(size int) *Crossword {
-	logrus.Debugln(`(c *Crossword) New`)
 
 	var grid [][]string
 
@@ -44,25 +42,22 @@ func New(size int) *Crossword {
 }
 
 func (c *Crossword) String() string {
-	logrus.Debugln(`(c *Crossword) String`)
 
-	for ri, row := range *c.Grid {
-		for ci, col := range row {
+	for _, row := range *c.Grid {
+		for _, col := range row {
 			if col == "" {
 
-				col = fmt.Sprintf(" %02d,%02d ", ri, ci)
+				//col = fmt.Sprintf(" %02d,%02d ", ri, ci)
+				col = fmt.Sprint("   ")
 			} else {
-				col = "   " + col + "   "
+				col = " " + col + " "
 			}
 			fmt.Print(col)
 		}
 		fmt.Println()
 	}
-	j, err := json.Marshal(c)
-	if err != nil {
-		panic(err)
-	}
-	return string(j)
+
+	return string("")
 }
 
 func (c *Crossword) Generate() {
@@ -72,27 +67,23 @@ func (c *Crossword) Generate() {
 }
 
 func (c *Crossword) Insert(word string) {
-	logrus.Debugln(`(c *Crossword) Insert`)
 
 	if c.IsEmpty() {
 		middleRow := len(*c.Grid) / 2
 		grid := *c.Grid
 		middleCol := len(grid[middleRow]) / 2
 		colIndex := middleCol - len(word)/2
-		fmt.Println(middleRow, middleCol, colIndex)
 		c.InsertHorizontal(middleRow, colIndex, word)
 		return
 	}
 
 	if !c.FindSpace(word) {
-		logrus.Errorln("no space for word ", word)
 		c.NotPlaced = append(c.NotPlaced, word)
 	}
 
 }
 
 func (c *Crossword) IsEmpty() bool {
-	logrus.Debugln(`(c *Crossword) IsEmpty`)
 
 	for _, row := range *c.Grid {
 		for _, col := range row {
@@ -105,7 +96,6 @@ func (c *Crossword) IsEmpty() bool {
 }
 
 func (c *Crossword) InsertHorizontal(row int, col int, word string) {
-	logrus.Debugln(`(c *Crossword) InsertHorizontal`)
 
 	for i, char := range word {
 		grid := *c.Grid
@@ -115,7 +105,6 @@ func (c *Crossword) InsertHorizontal(row int, col int, word string) {
 }
 
 func (c *Crossword) InsertVertical(row int, col int, word string) {
-	logrus.Debugln(`(c *Crossword) InsertVertical`, row, col, word)
 
 	for i, char := range word {
 		grid := *c.Grid
@@ -125,7 +114,6 @@ func (c *Crossword) InsertVertical(row int, col int, word string) {
 }
 
 func (c *Crossword) FindSpace(word string) (valid bool) {
-	logrus.Debugln(`(c *Crossword) FindSpace`)
 
 	letters := strings.Split(word, "")
 
@@ -151,9 +139,7 @@ func (c *Crossword) FindSpace(word string) (valid bool) {
 }
 
 func (c *Crossword) FindSpaceHorizontal(letters []string) (valid bool) {
-	logrus.Debugln(`(c *Crossword) FindSpaceVertical`)
 	points := c.FindIntersectionPoints(letters)
-	logrus.Infoln(points)
 
 	var validPoints []IntersectPoint
 
@@ -211,9 +197,7 @@ func (c *Crossword) FindSpaceHorizontal(letters []string) (valid bool) {
 }
 
 func (c *Crossword) FindSpaceVertical(letters []string) (valid bool) {
-	logrus.Debugln(`(c *Crossword) FindSpaceVertical`)
 	points := c.FindIntersectionPoints(letters)
-	logrus.Infoln(points)
 
 	var validPoints []IntersectPoint
 
@@ -294,7 +278,6 @@ func (i *IntersectPoint) String() string {
 }
 
 func (c *Crossword) FindIntersectionPoints(letters []string) []IntersectPoint {
-	logrus.Debugln(`(c *Crossword) FindIntersectionPoints`)
 
 	var points []IntersectPoint
 	for letterIndex, letter := range letters {
@@ -302,7 +285,6 @@ func (c *Crossword) FindIntersectionPoints(letters []string) []IntersectPoint {
 		for rowIndex, row := range grid {
 			for colIndex, col := range row {
 				if letter == col {
-					logrus.Infoln("intersection", col, letter, letterIndex, rowIndex, colIndex)
 					intersectPoint := IntersectPoint{
 						LetterIndex: letterIndex,
 						RowIndex:    rowIndex,
@@ -310,7 +292,6 @@ func (c *Crossword) FindIntersectionPoints(letters []string) []IntersectPoint {
 						Word:        strings.Join(letters, ""),
 					}
 					points = append(points, intersectPoint)
-					logrus.Infoln("IntersectPoint", intersectPoint.String())
 				}
 			}
 		}
