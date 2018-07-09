@@ -2,11 +2,10 @@ package crossword
 
 import (
 	"sort"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"math/rand"
 	"time"
+	"encoding/json"
 )
 
 func init() {
@@ -15,9 +14,29 @@ func init() {
 
 type Crossword struct {
 	Words     []string    `json:"words"`
+	Placed    []string    `json:"placed"`
 	NotPlaced []string    `json:"not_placed"`
-	Grid      *[][]string `json:"grid"`
+	Grid      *[][]string `json:"-"`
 }
+
+type Coordinate struct {
+	RowIndex int `json:"row"`
+	ColIndex int `json:"col"`
+
+	Word      string `json:"word,omitempty"`
+	Letter    string `json:"letter,omitempty"`
+	WordIndex int    `json:"word_index,omitempty"`
+
+	Direction Direction     `json:"direction"`
+	Placement []*Coordinate `json:"placement,omitempty"`
+}
+
+type Direction int
+
+const (
+	Vertical   = Direction(iota)
+	Horizontal
+)
 
 func New(size int) *Crossword {
 
@@ -28,7 +47,7 @@ func New(size int) *Crossword {
 	}
 
 	crossword := &Crossword{
-		Words: []string{"hello", "goodbye", "hate", "hat"},
+		Words: []string{"hello", "goodbye"},
 		Grid:  &grid,
 	}
 
@@ -36,270 +55,203 @@ func New(size int) *Crossword {
 		return len(crossword.Words[i]) > len(crossword.Words[j])
 	})
 
+	crossword.Placed = []string{}
+	crossword.NotPlaced = crossword.Words
+
 	crossword.Generate()
 
 	return crossword
 }
 
-func (c *Crossword) String() string {
+func (crossword *Crossword) String() string {
 
-	for _, row := range *c.Grid {
-		for _, col := range row {
+	for ri, row := range *crossword.Grid {
+		for ci, col := range row {
 			if col == "" {
 
-				//col = fmt.Sprintf(" %02d,%02d ", ri, ci)
-				col = fmt.Sprint("   ")
+				col = fmt.Sprintf(" %02d,%02d ", ri, ci)
+				//col = fmt.Sprint("   ")
 			} else {
-				col = " " + col + " "
+				col = "   " + col + "   "
 			}
 			fmt.Print(col)
 		}
 		fmt.Println()
 	}
-
-	return string("")
+	j, _ := json.Marshal(crossword)
+	return string(j)
 }
 
-func (c *Crossword) Generate() {
-	for _, w := range c.Words {
-		c.Insert(w)
+func (crossword *Crossword) Generate() {
+	crossword.InsertWords()
+}
+
+func (crossword *Crossword) InsertWords() {
+	for _, word := range crossword.NotPlaced {
+		crossword.InsertWord(word)
 	}
 }
 
-func (c *Crossword) Insert(word string) {
-
-	if c.IsEmpty() {
-		middleRow := len(*c.Grid) / 2
-		grid := *c.Grid
-		middleCol := len(grid[middleRow]) / 2
-		colIndex := middleCol - len(word)/2
-		c.InsertHorizontal(middleRow, colIndex, word)
+func (crossword *Crossword) InsertWord(word string) {
+	if len(crossword.Placed) == 0 {
+		crossword.InsertFirst(word)
+		crossword.UpdatePlacedWords(word)
 		return
 	}
 
-	if !c.FindSpace(word) {
-		c.NotPlaced = append(c.NotPlaced, word)
-	}
+	intersectionPoints := crossword.FindIntersectPoints(word)
+	verticalPoints := crossword.ValidVerticalPoints(intersectionPoints)
+	horizontalPoints := crossword.ValidHorizontalPoints(intersectionPoints)
 
+	points := append(verticalPoints, horizontalPoints...)
+
+	fmt.Println(toString(points))
 }
 
-func (c *Crossword) IsEmpty() bool {
-
-	for _, row := range *c.Grid {
-		for _, col := range row {
-			if col != "" {
-				return false
-			}
-		}
-	}
-	return true
+func (crossword *Crossword) UpdatePlacedWords(word string) {
+	crossword.Placed = append(crossword.Placed, word)
+	i := SliceIndex(len(crossword.NotPlaced), func(i int) bool { return crossword.NotPlaced[i] == word })
+	crossword.NotPlaced = append(crossword.NotPlaced [:i], crossword.NotPlaced [i+1:]...)
 }
 
-func (c *Crossword) InsertHorizontal(row int, col int, word string) {
+func (crossword *Crossword) InsertFirst(word string) {
+	grid := *crossword.Grid
+	centerRow := len(grid) / 2
+	centerCol := len(grid[centerRow]) / 2
+	startPos := centerCol - len(word)/2
 
+	var coordinates []*Coordinate
 	for i, char := range word {
-		grid := *c.Grid
-		grid[row][col+i] = string(char)
-		c.Grid = &grid
-	}
-}
-
-func (c *Crossword) InsertVertical(row int, col int, word string) {
-
-	for i, char := range word {
-		grid := *c.Grid
-		grid[row+i][col] = string(char)
-		c.Grid = &grid
-	}
-}
-
-func (c *Crossword) FindSpace(word string) (valid bool) {
-
-	letters := strings.Split(word, "")
-
-	if randBool() {
-		if valid := c.FindSpaceVertical(letters); valid {
-			return true
-		}
-
-		if valid := c.FindSpaceHorizontal(letters); valid {
-			return true
-		}
-	} else {
-		if valid := c.FindSpaceHorizontal(letters); valid {
-			return true
-		}
-
-		if valid := c.FindSpaceVertical(letters); valid {
-			return true
-		}
+		coordinates = append(coordinates, &Coordinate{
+			RowIndex: centerRow,
+			ColIndex: startPos + i,
+			Letter:   string(char),
+		})
 	}
 
-	return false
+	crossword.Insert(coordinates)
 }
 
-func (c *Crossword) FindSpaceHorizontal(letters []string) (valid bool) {
-	points := c.FindIntersectionPoints(letters)
+func (crossword *Crossword) Insert(coordinates []*Coordinate) {
+	grid := *crossword.Grid
+	for _, coordinate := range coordinates {
+		grid[coordinate.RowIndex][coordinate.ColIndex] = coordinate.Letter
+	}
+	crossword.Grid = &grid
+}
 
-	var validPoints []IntersectPoint
+func (crossword *Crossword) FindIntersectPoints(word string) []*Coordinate {
 
+	grid := *crossword.Grid
+	var coordinates []*Coordinate
+	for letterIndex, char := range word {
+		for rowIndex, row := range grid {
+			for colIndex, col := range row {
+				if string(char) == col {
+					coordinates = append(coordinates, &Coordinate{
+						RowIndex:  rowIndex,
+						ColIndex:  colIndex,
+						Letter:    string(char),
+						WordIndex: letterIndex,
+						Word:      word,
+					})
+				}
+			}
+		}
+	}
+	return coordinates
+}
+
+func (crossword *Crossword) ValidVerticalPoints(points []*Coordinate) []*Coordinate {
+	var validPoints []*Coordinate
 	for _, point := range points {
-		var insertPoints []int
-
-		for i := -point.LetterIndex; i < (len(letters) - point.LetterIndex); i++ {
-			insertPoints = append(insertPoints, point.ColIndex+i)
-		}
-
-		var isValid = true
-		for i, col := range insertPoints {
-			grid := *c.Grid
-			if col != point.ColIndex {
-				if grid[point.RowIndex+1][col] != "" {
-					isValid = false
-					break
-				}
-
-				if grid[point.RowIndex-1][col] != "" {
-					isValid = false
-					break
-				}
-			}
-
-			if grid[point.RowIndex][col] == "" {
-				continue
-			}
-
-			if grid[point.RowIndex][col] == letters[i] {
-				continue
-			}
-
-			isValid = false
-			break
-		}
-
-		if isValid {
-			point.insertPoints = insertPoints
-			validPoints = append(validPoints, point)
+		if validPoint := crossword.ValidVerticalPoint(point); validPoint != nil {
+			validPoint.Direction = Vertical
+			validPoints = append(validPoints, validPoint)
+			return validPoints
 		}
 	}
-
-	if len(validPoints) == 0 {
-		return false
-	}
-
-	c.InsertHorizontal(
-		randomPoint(validPoints).RowIndex,
-		randomPoint(validPoints).insertPoints[0],
-		randomPoint(validPoints).Word,
-	)
-
-	return true
+	return validPoints
 }
 
-func (c *Crossword) FindSpaceVertical(letters []string) (valid bool) {
-	points := c.FindIntersectionPoints(letters)
-
-	var validPoints []IntersectPoint
-
+func (crossword *Crossword) ValidHorizontalPoints(points []*Coordinate) []*Coordinate {
+	var validPoints []*Coordinate
 	for _, point := range points {
-
-		var insertPoints []int
-
-		for i := -point.LetterIndex; i < (len(letters) - point.LetterIndex); i++ {
-			insertPoints = append(insertPoints, point.RowIndex+i)
-		}
-
-		var isValid = true
-		for i, r := range insertPoints {
-			grid := *c.Grid
-
-			if r != point.RowIndex {
-				if grid[r][point.ColIndex+1] != "" {
-					isValid = false
-					break
-				}
-
-				if grid[r][point.ColIndex-1] != "" {
-					isValid = false
-					break
-				}
-			}
-
-			if grid[r][point.ColIndex] == "" {
-				continue
-			}
-
-			if grid[r][point.ColIndex] == letters[i] {
-				continue
-			}
-
-			isValid = false
-			break
-		}
-
-		if isValid {
-			point.insertPoints = insertPoints
-			validPoints = append(validPoints, point)
+		if validPoint := crossword.ValidHorizontalPoint(point); validPoint != nil {
+			validPoint.Direction = Horizontal
+			validPoints = append(validPoints, validPoint)
+			return validPoints
 		}
 	}
+	return validPoints
+}
 
-	if len(validPoints) == 0 {
-		return false
+func (crossword *Crossword) ValidHorizontalPoint(point *Coordinate) *Coordinate {
+	return nil
+}
+
+func (crossword *Crossword) ValidVerticalPoint(point *Coordinate) *Coordinate {
+
+	grid := *crossword.Grid
+	var placements []*Coordinate
+
+	for charIndex, char := range point.Word {
+		fmt.Println(charIndex, string(char))
 	}
 
-	c.InsertVertical(
-		randomPoint(validPoints).insertPoints[0],
-		randomPoint(validPoints).ColIndex,
-		randomPoint(validPoints).Word,
-	)
+	for i := -point.WordIndex; i < len(point.Word)-point.WordIndex; i++ {
+		j := i + point.WordIndex
 
-	return true
+		point.Placement = make([]*Coordinate, 0)
+		row := point.RowIndex + i
+		col := point.ColIndex
+
+		fmt.Println(row, col, j)
+
+		// the exact line
+		currentChar := grid[row][col]
+		if currentChar != "" {
+			if currentChar != string(point.Word[j]) {
+				return nil
+			}
+		}
+
+		// either side of the line
+		leftChar := grid[row][col-1]
+		if leftChar != "" {
+			if leftChar != string(point.Word[j]) {
+				return nil
+			}
+		}
+
+		newC := &Coordinate{
+			RowIndex: row,
+			ColIndex: col,
+			Letter:   string(point.Word[j]),
+		}
+		fmt.Println(newC)
+		placements = append(placements, newC)
+
+	}
+
+	point.Placement = placements
+	crossword.Grid = &grid
+	return point
 }
 
-func randomPoint(points []IntersectPoint) IntersectPoint {
-
-	return points[rand.Intn(len(points))]
+func SliceIndex(limit int, predicate func(i int) bool) int {
+	for i := 0; i < limit; i++ {
+		if predicate(i) {
+			return i
+		}
+	}
+	return -1
 }
 
-type IntersectPoint struct {
-	LetterIndex  int
-	RowIndex     int
-	ColIndex     int
-	Word         string
-	insertPoints []int
-}
-
-func (i *IntersectPoint) String() string {
-	j, err := json.Marshal(i)
+func toString(i interface{}) string {
+	j, err := json.MarshalIndent(i, "", "\t")
 	if err != nil {
 		panic(err)
 	}
 	return string(j)
-}
-
-func (c *Crossword) FindIntersectionPoints(letters []string) []IntersectPoint {
-
-	var points []IntersectPoint
-	for letterIndex, letter := range letters {
-		grid := *c.Grid
-		for rowIndex, row := range grid {
-			for colIndex, col := range row {
-				if letter == col {
-					intersectPoint := IntersectPoint{
-						LetterIndex: letterIndex,
-						RowIndex:    rowIndex,
-						ColIndex:    colIndex,
-						Word:        strings.Join(letters, ""),
-					}
-					points = append(points, intersectPoint)
-				}
-			}
-		}
-	}
-
-	return points
-}
-
-func randBool() bool {
-	return rand.Float32() < 0.5
 }
